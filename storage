@@ -1,0 +1,94 @@
+local petName = getgenv().Config["PetName"]
+
+print("[INFO] Loading information | Storage Account")
+print("-----------------------------------------")
+print("[INFO] Pets: "..petName)
+
+-- Dehash script
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Rano194/Rano194/refs/heads/main/Dehash"))()
+print("[INFO] loading dehash remote")
+
+-- getting pets
+local clientData = require(game.ReplicatedStorage.ClientModules.Core.ClientData)
+local playerData = clientData.get_data()[tostring(game.Players.LocalPlayer)]
+
+local count = 0
+for _, pet in pairs(playerData.inventory.pets or {}) do
+    if pet.kind == petName and pet.properties.age < 6 and not pet.properties.neon and not pet.properties.mega_neon then
+        count += 1
+    end
+end
+
+print("[INFO] Getting count need pets: "..count)
+-- Функция для получения 18 петов
+function GetFilteredPets(petName, maxCount)
+    local playerData = clientData.get_data()[tostring(game.Players.LocalPlayer)]
+    local filteredPets = {}
+
+    for _, pet in pairs(playerData.inventory.pets or {}) do
+        if #filteredPets >= maxCount then
+            break
+        end
+
+        if pet.kind == petName and pet.properties.age < 6 and not pet.properties.neon and not pet.properties.mega_neon then
+            table.insert(filteredPets, pet)
+        end
+    end
+
+    return filteredPets
+end
+
+-- Функция для принятия трейда
+local nickname_player_trade = nil
+game.ReplicatedStorage.API["TradeAPI/TradeRequestReceived"].OnClientEvent:Connect(function(player)
+    game.ReplicatedStorage.API["TradeAPI/AcceptOrDeclineTradeRequest"]:InvokeServer(player, true)
+    game.Players.LocalPlayer.PlayerGui.DialogApp.Dialog.Visible = false
+    nickname_player_trade = player.Name
+    print("[INFO] Accept trade | "..player.Name)
+end)
+
+-- Цикл трейда
+local requestFunc = syn and syn.request or http_request or request
+
+while true do
+    task.wait(1)
+    -- Получаем окно трейда
+    if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.Visible == true then
+        task.wait(1)
+        local res = requestFunc({ Url = "https://farmertester.pythonanywhere.com/getpets?nick="..nickname_player_trade, Method = "GET" })
+        local data = game:GetService("HttpService"):JSONDecode(res.Body)
+        if data.pets == "Ready" then
+            print("[INFO] Detect status Ready, claim pets")
+            while true do
+                task.wait(0.5)
+                game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("TradeAPI/AcceptNegotiation"):FireServer()
+                game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("TradeAPI/ConfirmTrade"):FireServer()
+                if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.Visible == false then
+                    print("[INFO] Finish trade")
+                    break
+                end
+            end
+        else -- Получаем нужное кол-во петов и отправляем в трейде
+            print("[INFO] Need pets | "..data.pets)
+            local count_pets = data.pets
+            local result = math.min(count_pets, 18)
+            local pets = GetFilteredPets(petName, result)
+            for i, pet in ipairs(pets) do
+                local args = {pet.unique}
+                game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("TradeAPI/AddItemToOffer"):FireServer(unpack(args))
+            end
+            print("[INFO] Offer pets | "..result)
+            while true do
+                task.wait(0.5)
+                game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("TradeAPI/AcceptNegotiation"):FireServer()
+                game:GetService("ReplicatedStorage"):WaitForChild("API"):WaitForChild("TradeAPI/ConfirmTrade"):FireServer()
+                if game:GetService("Players").LocalPlayer.PlayerGui.TradeApp.Frame.Visible == false then
+                    local res = requestFunc({ Url = "https://farmertester.pythonanywhere.com/getpets?nick="..nickname_player_trade.."&remove_count="..result, Method = "GET" })
+                    local data = game:GetService("HttpService"):JSONDecode(res.Body)
+                    print("[INFO] Finish trade")
+                    break
+                end
+            end
+        end
+    end
+end
